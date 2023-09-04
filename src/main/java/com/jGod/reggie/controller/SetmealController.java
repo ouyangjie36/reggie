@@ -10,6 +10,10 @@ import com.jGod.reggie.service.CategoryService;
 import com.jGod.reggie.service.SetmealService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,8 +26,11 @@ public class SetmealController {
     private SetmealService setmealService;
     @Autowired
     private CategoryService categoryService;
+    @Autowired
+    private CacheManager cacheManager;
 
     @PostMapping
+    @CacheEvict(value = "setmeal",key = "#setmealDto.categoryId+'_1'")
     public R<String> save(@RequestBody SetmealDto setmealDto){
         setmealService.saveWithDish(setmealDto);
         return R.success("添加套餐成功");
@@ -51,12 +58,14 @@ public class SetmealController {
     }
 
     @DeleteMapping
+    @CacheEvict(value = "setmeal",allEntries = true)
     public R<String> delete(@RequestParam List<Long> ids){
         setmealService.removeWithDish(ids);
         return R.success("删除套餐成功");
     }
 
     @PostMapping("/status/{action}")
+    @CacheEvict(value = "setmeal",allEntries = true)
     public R<String> changeStatus(@PathVariable Integer action,@RequestParam List<Long> ids){
         setmealService.changeStatus(action,ids);
         return R.success(action==0?"停售":"起售"+"成功");
@@ -68,6 +77,7 @@ public class SetmealController {
     }
 
     @GetMapping("/list")
+    @Cacheable(value = "setmeal",key = "#setmeal.categoryId+'_'+#setmeal.status")
     public R<List<Setmeal>> list(Setmeal setmeal){
         LambdaQueryWrapper<Setmeal> lambdaQueryWrapper = new LambdaQueryWrapper<>();
         lambdaQueryWrapper.eq(setmeal.getCategoryId()!=null,Setmeal::getCategoryId,setmeal.getCategoryId());
