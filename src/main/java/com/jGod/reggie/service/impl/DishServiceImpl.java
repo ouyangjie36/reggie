@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.jGod.reggie.common.R;
 import com.jGod.reggie.dto.DishDto;
 import com.jGod.reggie.entity.Dish;
 import com.jGod.reggie.entity.DishFlavor;
@@ -14,17 +15,21 @@ import com.jGod.reggie.service.DishService;
 import org.apache.ibatis.annotations.Update;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
 public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements DishService {
     @Autowired
     private DishFlavorService dishFlavorService;
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @Override
     @Transactional
@@ -35,6 +40,8 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
             dishFlavor.setDishId(dishId);
         }
         dishFlavorService.saveBatch(dishDto.getFlavors());
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
     }
 
     @Override
@@ -61,6 +68,9 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
             return item;
         }).collect(Collectors.toList());
         dishFlavorService.saveBatch(dishFlavors);
+        //清理redis
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
     }
 
     @Override
@@ -75,12 +85,19 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
 
     @Override
     public List<DishDto> list(Dish dish) {
+        List<DishDto> dishDtoList = null;
+        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
+        //判断redis中是否存在
+        dishDtoList = (List<DishDto>)redisTemplate.opsForValue().get(key);
+        if(dishDtoList != null){
+            return dishDtoList;
+        }
         LambdaQueryWrapper<Dish> lambdaQueryWrapper = new LambdaQueryWrapper<>();
         lambdaQueryWrapper.eq(dish.getCategoryId()!=null,Dish::getCategoryId,dish.getCategoryId());
         lambdaQueryWrapper.eq(Dish::getStatus,1);
         lambdaQueryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> list = list(lambdaQueryWrapper);
-        List<DishDto> dishDtoList = list.stream().map((item)->{
+        dishDtoList = list.stream().map((item)->{
             DishDto dishDto = new DishDto();
             BeanUtils.copyProperties(item,dishDto);
             LambdaQueryWrapper<DishFlavor> lambdaQueryWrapper1 = new LambdaQueryWrapper<>();
@@ -89,6 +106,8 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
             dishDto.setFlavors(dishFlavorList);
             return dishDto;
         }).collect(Collectors.toList());
+        redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
+
         return dishDtoList;
     }
 

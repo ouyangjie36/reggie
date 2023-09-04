@@ -14,6 +14,7 @@ import com.jGod.reggie.service.SetmealDishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +30,8 @@ public class DishController {
     private CategoryService categoryService;
     @Autowired
     private SetmealDishService setmealDishService;
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @PostMapping
     public R<String> save(@RequestBody DishDto dishDto) {
@@ -84,6 +87,14 @@ public class DishController {
         int num = setmealDishService.count(lambdaQueryWrapper);
         if(num>0){
             throw new CustomException("菜品关联套餐");
+        }
+        LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(Dish::getId,ids);
+        List<Dish> list = dishService.list(queryWrapper);
+        for(Dish dish:list){
+            System.out.println(dish.getCategoryId());
+            String key = "dish_" + dish.getCategoryId() + "_1";
+            redisTemplate.delete(key);
         }
         dishService.removeByIds(ids);
         return R.success("删除成功");
